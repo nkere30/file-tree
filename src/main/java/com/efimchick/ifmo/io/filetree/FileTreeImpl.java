@@ -16,8 +16,6 @@ public class FileTreeImpl implements FileTree {
         if (path == null || !Files.exists(path)) {
             return Optional.empty();
         }
-
-
         try {
             if (Files.isRegularFile(path)) {
                 return Optional.of(path.getFileName() + " " + Files.size(path) + " bytes");
