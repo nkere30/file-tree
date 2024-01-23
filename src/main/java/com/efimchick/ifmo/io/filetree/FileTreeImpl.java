@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class FileTreeImpl implements FileTree {
 
@@ -33,40 +34,46 @@ public class FileTreeImpl implements FileTree {
     private Optional<String> buildTree(Path path, StringBuilder result) throws IOException {
         long totalSize = 0;
 
-        List<Path> contentList = Files.list(path)
-                .sorted(Comparator.comparing(Path::toString, String.CASE_INSENSITIVE_ORDER))
-                .collect(Collectors.toList());
-        int contentCount = 0;
-        for (Path content: contentList) {
-            boolean isLast = contentCount == contentList.size() - 1;
-            contentCount++;
-            Optional<String> contents = tree(content);
-            if (contents.isPresent()) {
-                String treeStr = contents.get();
-                if (contentCount < contentList.size()) {
-                    treeStr = treeStr.replaceAll("\n", "\n│  ");
-                    result.append("├─ ").append(treeStr);
-                } else {
-                    treeStr = treeStr.replaceAll("\n", "\n  ");
-                    result.append("└─ ").append(treeStr);
+        try (Stream<Path> contents = Files.list(path)) {
+            List<Path> contentList = contents
+                    .sorted(Comparator
+                            .<Path, Boolean>comparing(Files::isDirectory)
+                            .reversed()  // Directories first
+                            .thenComparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
+                    .collect(Collectors.toList());
+
+            int contentCount = 0;
+            for (Path content : contentList) {
+                contentCount++;
+                boolean isLast = contentCount == contentList.size();
+                Optional<String> contentStr = tree(content);
+                if (contentStr.isPresent()) {
+                    String treeStr = contentStr.get();
+                    if (contentCount < contentList.size()) {
+                        treeStr = treeStr.replaceAll("\n", "\n│  ");
+                        result.append("├─ ").append(treeStr);
+                    } else {
+                        treeStr = treeStr.replaceAll("\n", "\n   ");
+                        result.append("└─ ").append(treeStr);
+                    }
+                    totalSize += getTotalSize(content);
                 }
-                totalSize += getTotalSize(content);
+                if (!isLast) result.append("\n");
             }
-            if(!isLast) result.append("\n");
+            return Optional.of(path.getFileName() + " " + totalSize + " bytes\n" + result.toString());
         }
-        return Optional.of(path.getFileName() + " " + totalSize + " bytes\n" +  result.toString());
     }
 
-    private long getTotalSize(Path path) throws IOException {
-        return Files.walk(path)
-                .filter(p -> Files.isRegularFile(p))
-                .mapToLong(p -> {
-                    try {
-                        return Files.size(p);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                })
-                .sum();
-    }
+        private long getTotalSize (Path path) throws IOException {
+            return Files.walk(path)
+                    .filter(p -> Files.isRegularFile(p))
+                    .mapToLong(p -> {
+                        try {
+                            return Files.size(p);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    })
+                    .sum();
+        }
 }
