@@ -23,8 +23,7 @@ public class FileTreeImpl implements FileTree {
                 return Optional.of(path.getFileName() + " " + Files.size(path) + " bytes");
             } else if (Files.isDirectory(path)) {
                 StringBuilder result = new StringBuilder();
-                buildTree(path, result, "");
-                return Optional.of(result.toString());
+                return  buildTree(path, result);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -33,8 +32,35 @@ public class FileTreeImpl implements FileTree {
         return Optional.empty();
     }
 
-    private void buildTree(Path path, StringBuilder result, String prefix) throws IOException {
-        long totalSize = Files.walk(path)
+    private Optional<String> buildTree(Path path, StringBuilder result) throws IOException {
+        long totalSize = 0;
+
+        List<Path> contentList = Files.list(path)
+                .sorted(Comparator.comparing(Path::toString, String.CASE_INSENSITIVE_ORDER))
+                .collect(Collectors.toList());
+        int contentCount = 0;
+        for (Path content: contentList) {
+            boolean isLast = contentCount == contentList.size() - 1;
+            contentCount++;
+            Optional<String> contents = tree(content);
+            if (contents.isPresent()) {
+                String treeStr = contents.get();
+                if (contentCount < contentList.size()) {
+                    treeStr = treeStr.replaceAll("\n", "\n│  ");
+                    result.append("├─ ").append(treeStr);
+                } else {
+                    treeStr = treeStr.replaceAll("\n", "\n  ");
+                    result.append("└─ ").append(treeStr);
+                }
+                totalSize += getTotalSize(content);
+            }
+            if(!isLast) result.append("\n");
+        }
+        return Optional.of(path.getFileName() + " " + totalSize + " bytes\n" +  result.toString());
+    }
+
+    private long getTotalSize(Path path) throws IOException {
+        return Files.walk(path)
                 .filter(p -> Files.isRegularFile(p))
                 .mapToLong(p -> {
                     try {
@@ -44,30 +70,5 @@ public class FileTreeImpl implements FileTree {
                     }
                 })
                 .sum();
-
-        List<Path> contentList = Files.list(path)
-                .sorted(Comparator.comparing(Path::toString, String.CASE_INSENSITIVE_ORDER))
-                .collect(Collectors.toList());
-
-        result.append(prefix)
-                .append(path.getFileName())
-                .append(" ")
-                .append(totalSize)
-                .append(" bytes")
-                .append("\n");
-
-        int contentCount = 0;
-        for (Path content: contentList) {
-            boolean isLast = contentCount == contentList.size() - 1;
-            contentCount++;
-            result.append(prefix)
-                    .append(isLast ? "└─ " : "├─ ");
-            if (Files.isDirectory(content)) {
-                buildTree(content, result, prefix + (isLast ? "   " : "│  "));
-            } else {
-                result.append(content.getFileName()).append(" ").append(Files.size(content)).append(" bytes").append("\n");
-            }
-        }
-
     }
 }
